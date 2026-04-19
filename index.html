@@ -1363,7 +1363,7 @@ let loadingInterval;
 
 function normalize(s) { return s.toLowerCase().replace(/[^a-z0-9& ]/g,'').replace(/\s+/g,' ').trim(); }
 
-function analyze() {
+async function analyze() {
   const raw = document.getElementById('brandInput').value.trim();
   if (!raw) return;
   hide('emptyState'); hide('resultContainer'); hide('notFound');
@@ -1377,18 +1377,37 @@ function analyze() {
     setLoadingText(...LOADING_STEPS[step]);
   }, 900);
 
-  setTimeout(() => {
+  const key = normalize(raw);
+  if (DB[key]) {
+    await new Promise(r => setTimeout(r, 1200));
     clearInterval(loadingInterval);
     hide('loadingState');
-    const key = normalize(raw);
-    const result = DB[key];
-    if (result) {
-      renderResult(result);
-    } else {
-      document.getElementById('notFoundName').textContent = '"' + raw + '" is not in the database.';
+    renderResult(DB[key]);
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brand: raw })
+    });
+    const data = await res.json();
+    clearInterval(loadingInterval);
+    hide('loadingState');
+    if (data.error) {
+      document.getElementById('notFoundName').textContent = 'Analysis failed: ' + data.error;
       show('notFound');
+    } else {
+      DB[normalize(data.brandName)] = data;
+      renderResult(data);
     }
-  }, 2200);
+  } catch (e) {
+    clearInterval(loadingInterval);
+    hide('loadingState');
+    document.getElementById('notFoundName').textContent = '"' + raw + '" — could not reach analysis server.';
+    show('notFound');
+  }
 }
 
 function renderResult(d) {
